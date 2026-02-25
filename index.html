@@ -1,0 +1,1151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SBS Pro AI - Stereoscopic Suite (v5.4.1 Stability Fix)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: radial-gradient(circle at top left, #0f172a, #020617);
+            min-height: 100vh;
+            color: #f8fafc;
+        }
+
+        .glass {
+            background: rgba(30, 41, 59, 0.6);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .active-tab {
+            background: rgba(59, 130, 246, 0.2);
+            color: #60a5fa;
+            border-bottom: 2px solid #3b82f6;
+        }
+
+        #preview-canvas, #depth-view-canvas, #depth-mini-canvas {
+            display: block;
+            max-width: 100%;
+            object-fit: contain;
+            border-radius: 0.75rem;
+        }
+
+        #preview-canvas {
+            max-height: 65vh;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .loader-ring {
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .btn-ai {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            transition: all 0.2s ease;
+        }
+        .btn-ai:hover:not(:disabled) { filter: brightness(1.1); transform: translateY(-1px); }
+        .btn-ai:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .btn-stop {
+            background: linear-gradient(135deg, #ef4444, #b91c1c);
+        }
+
+        input[type="range"] { accent-color: #3b82f6; }
+        
+        #v-seek {
+            -webkit-appearance: none;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 2px;
+            outline: none;
+            position: relative;
+            z-index: 10;
+        }
+        #v-seek::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+        #v-seek::-webkit-slider-thumb:hover { transform: scale(1.2); }
+
+        .ai-badge {
+            background: rgba(168, 85, 247, 0.2);
+            color: #a855f7;
+            border: 1px solid rgba(168, 85, 247, 0.4);
+            box-shadow: 0 0 15px rgba(168, 85, 247, 0.1);
+        }
+        .ai-glow {
+            border-color: rgba(168, 85, 247, 0.5) !important;
+            box-shadow: 0 0 20px rgba(168, 85, 247, 0.2) !important;
+        }
+
+        .collapsible-content {
+            max-height: 500px;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
+        }
+        .collapsible-content.collapsed {
+            max-height: 0;
+            opacity: 0;
+            margin-top: 0 !important;
+        }
+
+        .progress-overlay { background: rgba(2, 6, 23, 0.85); backdrop-filter: blur(8px); }
+        
+        #buffered-progress {
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            background: rgba(168, 85, 247, 0.5);
+            width: 0%;
+            pointer-events: none;
+            border-radius: 2px;
+            transition: width 0.2s;
+        }
+
+        /* Fullscreen styles */
+        #canvas-container:fullscreen {
+            border-radius: 0;
+            padding: 0;
+            background: #000;
+            border: none;
+        }
+        #canvas-container:fullscreen #preview-canvas {
+            max-height: 100vh;
+            border-radius: 0;
+            box-shadow: none;
+        }
+        #canvas-container:fullscreen #video-bar {
+            bottom: 30px;
+            left: 30px;
+            right: 30px;
+            background: rgba(15, 23, 42, 0.8);
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+    <div class="max-w-7xl mx-auto">
+        <header class="flex flex-col md:flex-row justify-between items-center mb-8 gap-6 border-b border-white/10 pb-6">
+            <div>
+                <h1 class="text-3xl font-bold tracking-tighter text-white flex items-center gap-3">
+                    <i class="fas fa-cubes text-blue-500"></i> SBS <span class="text-blue-500">AI</span> PRO
+                </h1>
+                <p class="text-slate-400 text-xs mt-1 uppercase tracking-widest">Stereoscopic Engineering Suite <span class="text-blue-900 ml-2">v5.4.1</span></p>
+            </div>
+
+            <nav class="flex gap-2 glass p-1 rounded-xl">
+                <button onclick="switchPage('sbs')" id="nav-sbs" class="px-4 py-2 rounded-lg text-sm font-semibold transition-all active-tab">SBS Generator</button>
+                <button onclick="switchPage('depth')" id="nav-depth" class="px-4 py-2 rounded-lg text-sm font-semibold transition-all text-slate-400 hover:text-white">AI Depth Viewer</button>
+            </nav>
+
+            <div id="backend-status" class="text-[10px] glass px-3 py-1.5 rounded-full flex items-center gap-2 border border-white/5">
+                <span id="status-dot" class="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse"></span>
+                <span id="status-text">Initializing Engine...</span>
+            </div>
+        </header>
+
+        <div id="progress-container" class="hidden max-w-2xl mx-auto mb-8 glass rounded-2xl p-4 border border-blue-500/20">
+            <div class="flex justify-between text-[10px] text-slate-400 mb-2 uppercase tracking-tighter">
+                <span id="progress-label">Downloading Neural Weights...</span>
+                <span id="progress-percent">0%</span>
+            </div>
+            <div class="w-full h-1 bg-slate-800 rounded-full overflow-hidden">
+                <div id="progress-bar" class="h-full bg-blue-500 w-0 transition-all duration-300"></div>
+            </div>
+        </div>
+
+        <main>
+            <!-- PAGE 1: SBS GENERATOR -->
+            <section id="page-sbs" class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                <aside class="lg:col-span-1 space-y-4">
+                    <div class="glass rounded-2xl p-5 space-y-6">
+                        <div id="upload-zone" class="border-2 border-dashed border-slate-700 rounded-xl p-6 text-center cursor-pointer hover:border-blue-500 hover:bg-white/5 transition-all">
+                            <input type="file" id="file-input" class="hidden" accept="image/*,video/*">
+                            <i class="fas fa-upload text-2xl text-slate-500 mb-2"></i>
+                            <p class="text-xs text-slate-400 font-medium">Select Source Media</p>
+                        </div>
+
+                        <div id="active-controls" class="hidden space-y-5">
+                            <div id="ai-controls">
+                                <button id="process-sbs-btn" class="w-full btn-ai py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 transition-colors">
+                                    <i class="fas fa-microchip"></i> <span id="btn-ai-text">Start Background Analysis</span>
+                                </button>
+                                
+                                <div id="analysis-progress-ui" class="hidden mt-3 space-y-1">
+                                    <div class="flex justify-between text-[8px] text-purple-400 uppercase tracking-widest font-bold">
+                                        <span>Pre-Caching Frames (RAM)</span>
+                                        <span id="analysis-percent">0%</span>
+                                    </div>
+                                    <div class="w-full h-1 bg-slate-800 rounded-full overflow-hidden">
+                                        <div id="analysis-bar" class="h-full bg-purple-500 w-0 transition-all"></div>
+                                    </div>
+                                    <p class="text-[9px] text-slate-500 italic">Play video to view cached result.</p>
+                                </div>
+                            </div>
+
+                            <div class="space-y-4 pt-4 border-t border-white/5">
+                                <div class="flex flex-col gap-2">
+                                    <label class="text-[10px] uppercase font-bold text-slate-500">Output Format</label>
+                                    <select id="sbs-method" class="bg-slate-800 text-slate-200 border border-white/10 rounded px-2 py-1.5 text-xs outline-none cursor-pointer">
+                                        <option value="sbs">Side-by-Side (Parallel)</option>
+                                        <option value="cross">Cross-Eye (L/R Swap)</option>
+                                        <option value="wiggle">Wiggle 3D (Anim)</option>
+                                        <option value="anaglyph">Anaglyph (Red/Cyan)</option>
+                                    </select>
+                                </div>
+
+                                <div class="flex flex-col gap-2">
+                                    <label class="text-[10px] uppercase font-bold text-slate-500">Model Precision</label>
+                                    <select id="model-dtype" class="bg-slate-800 text-slate-200 border border-white/10 rounded px-2 py-1.5 text-xs outline-none cursor-pointer">
+                                        <option value="fp32" selected>FP32 (High Quality)</option>
+                                        <option value="fp16">FP16 (Fast/WebGPU)</option>
+                                        <option value="q8">Q8 (Low Memory)</option>
+                                    </select>
+                                </div>
+
+                                <div class="flex flex-col gap-2">
+                                    <div class="flex justify-between text-[10px] uppercase font-bold text-slate-500">
+                                        <label>Depth Strength</label>
+                                        <span id="val-strength">20px</span>
+                                    </div>
+                                    <input type="range" id="sbs-strength" min="-50" max="50" value="20" class="w-full">
+                                </div>
+                                
+                                <div class="flex flex-col gap-2">
+                                    <div class="flex justify-between text-[10px] uppercase font-bold text-slate-500">
+                                        <label>Temporal Smoothing</label>
+                                        <span id="val-smoothing">0.5</span>
+                                    </div>
+                                    <input type="range" id="sbs-smoothing" min="0" max="0.95" step="0.05" value="0.5" class="w-full">
+                                </div>
+
+                                <div class="flex flex-col gap-2">
+                                    <label class="text-[10px] uppercase font-bold text-slate-500">Process Mode</label>
+                                    <div class="flex bg-slate-900/50 p-1 rounded-lg">
+                                        <button id="scale-full" class="flex-1 py-1 rounded-md text-[10px] font-bold active-tab">Full Aspect</button>
+                                        <button id="scale-sq" class="flex-1 py-1 rounded-md text-[10px] font-bold text-slate-500">Squeezed</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="ai-mini-preview" class="hidden pt-4 border-t border-white/5">
+                                <button id="toggle-mini-preview" class="w-full flex justify-between items-center group mb-2">
+                                    <label class="text-[10px] uppercase font-bold text-purple-400 cursor-pointer group-hover:text-purple-300 tracking-tight">Neural Map Preview</label>
+                                    <i id="mini-preview-icon" class="fas fa-chevron-up text-[10px] text-purple-400 transition-transform"></i>
+                                </button>
+                                
+                                <div id="mini-preview-body" class="collapsible-content">
+                                    <div id="map-progress-container" class="space-y-1 mb-2">
+                                        <div class="flex justify-between text-[8px] text-slate-500 uppercase tracking-widest">
+                                            <span>Inference</span>
+                                            <span id="map-percent">0%</span>
+                                        </div>
+                                        <div class="w-full h-0.5 bg-slate-800 rounded-full overflow-hidden">
+                                            <div id="map-progress-bar" class="h-full bg-purple-500 w-0 transition-all duration-200"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="glass p-1 rounded-lg bg-black/40 aspect-video overflow-hidden">
+                                        <canvas id="depth-mini-canvas" class="w-full h-full opacity-80"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button id="download-sbs" class="w-full bg-slate-700 hover:bg-slate-600 py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all">
+                                <i id="btn-icon" class="fas fa-download"></i> <span id="btn-text">Save Result</span>
+                            </button>
+                            
+                            <button id="batch-export-btn" class="hidden w-full bg-emerald-700 hover:bg-emerald-600 py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all">
+                                <i class="fas fa-film"></i> Start Batch Render
+                            </button>
+                        </div>
+                    </div>
+                </aside>
+
+                <div class="lg:col-span-3 space-y-6">
+                    <div id="canvas-container" class="glass rounded-2xl p-4 min-h-[400px] flex flex-col items-center justify-center relative overflow-hidden">
+                        
+                        <!-- Batch Overlay -->
+                        <div id="batch-overlay" class="hidden absolute inset-0 z-50 flex flex-col items-center justify-center progress-overlay px-12 text-center">
+                            <div class="loader-ring w-12 h-12 mb-6"></div>
+                            <h3 class="text-xl font-bold mb-2 text-white">Batch Export Active</h3>
+                            <div class="w-full max-w-md space-y-2">
+                                <div class="flex justify-between text-xs text-blue-400 font-bold">
+                                    <span>Rendering Frames (Highest Quality)</span>
+                                    <span id="batch-percent">0%</span>
+                                </div>
+                                <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                                    <div id="batch-progress-bar" class="h-full bg-blue-500 w-0 transition-all"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- AI Badge -->
+                        <div id="ai-engine-badge" class="hidden absolute top-8 right-8 z-20 flex items-center gap-2 ai-badge backdrop-blur-md px-3 py-1.5 rounded-full shadow-lg">
+                            <i class="fas fa-microchip text-[10px]"></i>
+                            <span id="ai-badge-text" class="text-[10px] font-bold uppercase tracking-tighter text-white">Neural Processing</span>
+                        </div>
+
+                        <div id="sbs-placeholder" class="text-slate-600 italic text-sm">Waiting for upload...</div>
+                        <canvas id="preview-canvas" class="hidden"></canvas>
+                        
+                        <div id="video-bar" class="hidden absolute bottom-6 left-6 right-6 flex items-center gap-4 glass p-2 rounded-lg border border-white/10 transition-opacity duration-300">
+                            <button id="v-play" class="text-blue-400 hover:text-white w-5"><i class="fas fa-play"></i></button>
+                            <button id="v-mute" class="text-blue-400 hover:text-white w-5"><i class="fas fa-volume-mute"></i></button>
+                            <div class="flex-1 relative h-1 bg-slate-700 rounded-full flex items-center">
+                                <!-- Buffered (Purple) Region -->
+                                <div id="buffered-progress"></div>
+                                <input type="range" id="v-seek" min="0" max="100" value="0" step="0.1" class="absolute w-full h-full opacity-0 cursor-pointer z-20">
+                                <!-- Playback (Blue) Region -->
+                                <div id="play-progress" class="absolute h-full bg-blue-500 rounded-full pointer-events-none" style="width: 0%"></div>
+                                <div id="seek-thumb" class="absolute w-3 h-3 bg-white rounded-full shadow pointer-events-none transform -translate-x-1/2" style="left: 0%"></div>
+                            </div>
+                            <span id="v-time" class="text-[10px] font-mono text-slate-400 min-w-[40px] text-right">00:00</span>
+                            <button id="v-fullscreen" class="text-blue-400 hover:text-white ml-1"><i class="fas fa-expand"></i></button>
+                        </div>
+                    </div>
+                    
+                    <!-- Unified Info Grid -->
+                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div class="glass p-4 rounded-xl status-card">
+                            <p class="text-xs text-slate-400 mb-1">Source Resolution</p>
+                            <p id="info-type" class="text-sm font-mono text-slate-200 font-medium">-</p>
+                        </div>
+                        <div class="glass p-4 rounded-xl status-card">
+                            <p class="text-xs text-slate-400 mb-1">Output Resolution</p>
+                            <p id="info-res" class="text-sm font-mono text-slate-200 font-medium">-</p>
+                        </div>
+                        <div class="glass p-4 rounded-xl status-card">
+                            <p class="text-xs text-slate-400 mb-1">Target FPS</p>
+                            <p id="info-fps-target" class="text-sm text-slate-200 font-medium">Auto</p>
+                        </div>
+                        <div id="card-engine-status" class="glass p-4 rounded-xl status-card">
+                            <p class="text-xs text-slate-400 mb-1">Depth Engine</p>
+                            <p id="info-engine-text" class="text-sm italic text-slate-200 font-medium">Parallel Shift</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- PAGE 2: DEPTH VIEWER -->
+            <section id="page-depth" class="hidden space-y-6">
+                <div class="glass rounded-2xl p-8 text-center max-w-4xl mx-auto">
+                    <h2 class="text-2xl font-bold mb-2">Neural Map Inspector</h2>
+                    <p class="text-slate-400 text-sm mb-6">Grayscale depth mapping for technical calibration.</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div class="space-y-4 text-left">
+                            <label class="text-[10px] uppercase font-bold text-slate-500">Reference Frame</label>
+                            <div class="glass p-2 rounded-xl aspect-video relative bg-black/20 overflow-hidden">
+                                <img id="depth-input-img" src="" class="hidden w-full h-full object-contain">
+                                <canvas id="depth-video-preview" class="hidden w-full h-full object-contain"></canvas>
+                            </div>
+                            <button id="process-depth-only" class="w-full btn-ai py-4 rounded-xl font-bold text-sm">Analyze Frame</button>
+                        </div>
+                        <div class="space-y-4 text-left">
+                            <label class="text-[10px] uppercase font-bold text-slate-500">Depth Map Result</label>
+                            <div class="glass p-2 rounded-xl aspect-video relative bg-black/40 overflow-hidden">
+                                <canvas id="depth-view-canvas" class="hidden w-full h-full object-contain"></canvas>
+                                <button id="download-depth-only" class="hidden absolute bottom-4 right-4 bg-white/10 p-2 rounded-lg hover:bg-white/20">
+                                    <i class="fas fa-download"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Hidden Rendering Buffers & Analysis Source -->
+    <canvas id="snapshot-canvas" class="hidden"></canvas>
+    <!-- Playback Video -->
+    <video id="source-video" class="hidden" loop muted playsinline crossorigin="anonymous"></video>
+    <!-- Background Analysis Video - Visible but transparent to force browser rendering -->
+    <video id="analysis-video" class="fixed top-0 left-0 w-1 h-1 opacity-0 pointer-events-none" muted playsinline crossorigin="anonymous"></video>
+
+    <script type="module">
+        import { pipeline, env, RawImage } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.3';
+
+        env.allowLocalModels = false;
+        env.backends.onnx.wasm.proxy = true; 
+        env.backends.onnx.wasm.numThreads = 1;
+
+        const UI = {
+            statusText: document.getElementById('status-text'),
+            statusDot: document.getElementById('status-dot'),
+            progressBar: document.getElementById('progress-bar'),
+            progressContainer: document.getElementById('progress-container'),
+            progressLabel: document.getElementById('progress-label'),
+            progressPercent: document.getElementById('progress-percent'),
+            fileInput: document.getElementById('file-input'),
+            previewCanvas: document.getElementById('preview-canvas'),
+            depthViewCanvas: document.getElementById('depth-view-canvas'),
+            depthMiniCanvas: document.getElementById('depth-mini-canvas'),
+            snapshotCanvas: document.getElementById('snapshot-canvas'),
+            sbsPlaceholder: document.getElementById('sbs-placeholder'),
+            activeControls: document.getElementById('active-controls'),
+            infoRes: document.getElementById('info-res'),
+            infoType: document.getElementById('info-type'),
+            infoModeText: document.getElementById('info-mode-text'),
+            infoEngineText: document.getElementById('info-engine-text'),
+            canvasContainer: document.getElementById('canvas-container'),
+            vBar: document.getElementById('video-bar'),
+            vPlay: document.getElementById('v-play'),
+            vMute: document.getElementById('v-mute'),
+            vSeek: document.getElementById('v-seek'),
+            vTime: document.getElementById('v-time'),
+            vFullscreen: document.getElementById('v-fullscreen'),
+            playProgress: document.getElementById('play-progress'),
+            seekThumb: document.getElementById('seek-thumb'),
+            bufferedProgress: document.getElementById('buffered-progress'),
+            sourceVideo: document.getElementById('source-video'),
+            analysisVideo: document.getElementById('analysis-video'),
+            aiBadge: document.getElementById('ai-engine-badge'),
+            aiBadgeText: document.getElementById('ai-badge-text'),
+            depthInputImg: document.getElementById('depth-input-img'),
+            depthVideoPreview: document.getElementById('depth-video-preview'),
+            aiMiniPreview: document.getElementById('ai-mini-preview'),
+            btnAiText: document.getElementById('btn-ai-text'),
+            btnAi: document.getElementById('process-sbs-btn'),
+            miniPreviewBody: document.getElementById('mini-preview-body'),
+            miniPreviewIcon: document.getElementById('mini-preview-icon'),
+            batchOverlay: document.getElementById('batch-overlay'),
+            batchProgressBar: document.getElementById('batch-progress-bar'),
+            batchPercent: document.getElementById('batch-percent'),
+            batchBtn: document.getElementById('batch-export-btn'),
+            mapProgressBar: document.getElementById('map-progress-bar'),
+            mapPercent: document.getElementById('map-percent'),
+            scaleModeSelect: document.getElementById('scale-mode'),
+            modelDtype: document.getElementById('model-dtype'),
+            analysisUI: document.getElementById('analysis-progress-ui'),
+            analysisBar: document.getElementById('analysis-bar'),
+            analysisPercent: document.getElementById('analysis-percent')
+        };
+
+        let depthPipeline = null;
+        let originalImage = null; 
+        let currentDepthData = null; 
+        let smoothedDepthBuffer = null; 
+        let currentPage = 'sbs';
+        let scalingMode = 'full';
+        let isUserCollapsed = false; 
+        let wiggleFrame = 0;
+        let isVideo = false;
+        let isRecording = false;
+        let isBatchProcessing = false;
+        let mediaRecorder = null;
+        let recordedChunks = [];
+        let aiVideoActive = false;
+        let isAIProcessing = false; 
+        let isRendering = false;
+        let detectedFPS = 30;
+        
+        // RAM Cache for Background Analysis
+        const frameCache = new Map(); // Key: frameIndex, Value: depthData
+        let isCaching = false;
+        let analysisFrameIndex = 0;
+        let totalFrames = 0;
+
+        function safelyWire(id, event, handler) {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener(event, handler);
+        }
+
+        async function initAI(forceReset = false) {
+            if (depthPipeline && !forceReset) return;
+            
+            depthPipeline = null;
+            UI.progressContainer.classList.remove('hidden');
+            UI.statusDot.classList.replace('bg-emerald-500', 'bg-yellow-500');
+            UI.statusDot.classList.add('animate-pulse');
+            
+            const dtype = UI.modelDtype.value;
+
+            try {
+                let device = 'wasm';
+                if (navigator.gpu) {
+                    try {
+                        const adapter = await navigator.gpu.requestAdapter();
+                        if (adapter) device = 'webgpu';
+                    } catch(e) {}
+                }
+                
+                UI.statusText.innerText = `${device.toUpperCase()} (${dtype}) Init...`;
+                
+                try {
+                    depthPipeline = await createPipeline(device, dtype);
+                } catch (e) {
+                    console.warn(`Falling back to WASM for ${dtype}`);
+                    device = 'wasm';
+                    depthPipeline = await createPipeline('wasm', dtype);
+                }
+
+                UI.progressContainer.classList.add('hidden');
+                UI.statusText.innerText = `Ready (${device.toUpperCase()} ${dtype})`;
+                UI.statusDot.classList.replace('bg-yellow-500', 'bg-emerald-500');
+                UI.statusDot.classList.remove('animate-pulse');
+            } catch (err) {
+                UI.statusText.innerText = `ENGINE FAIL`;
+                UI.statusDot.classList.replace('bg-yellow-500', 'bg-red-500');
+                console.error(err);
+            }
+        }
+
+        async function createPipeline(device, dtype) {
+            return await pipeline('depth-estimation', 'onnx-community/depth-anything-v2-small', {
+                device: device,
+                dtype: dtype,
+                progress_callback: (p) => {
+                    UI.progressContainer.classList.remove('hidden');
+                    if (p.status === 'progress') {
+                        const percent = Math.round(p.progress);
+                        UI.progressBar.style.width = `${percent}%`;
+                        UI.progressPercent.innerText = `${percent}%`;
+                    }
+                }
+            });
+        }
+
+        // --- Interaction ---
+        safelyWire('upload-zone', 'click', () => UI.fileInput.click());
+        
+        UI.fileInput.onchange = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            if(UI.sbsPlaceholder) UI.sbsPlaceholder.classList.add('hidden');
+            if(UI.previewCanvas) UI.previewCanvas.classList.remove('hidden');
+            if(UI.activeControls) UI.activeControls.classList.remove('hidden');
+            
+            // Stop previous video if playing
+            if(isVideo && UI.sourceVideo) {
+                UI.sourceVideo.pause();
+                UI.sourceVideo.currentTime = 0;
+            }
+            if(UI.analysisVideo) UI.analysisVideo.pause();
+            
+            // Reset Internal State
+            currentDepthData = null;
+            smoothedDepthBuffer = null;
+            aiVideoActive = false;
+            isCaching = false;
+            isRendering = false;
+            wiggleFrame = 0;
+            frameCache.clear();
+            analysisFrameIndex = 0;
+            totalFrames = 0;
+            
+            // Reset UI Elements
+            if(UI.analysisUI) UI.analysisUI.classList.add('hidden');
+            if(UI.aiBadge) UI.aiBadge.classList.add('hidden');
+            if(UI.btnAiText) UI.btnAiText.innerText = "Start Background Analysis";
+            if(UI.btnAi) UI.btnAi.classList.remove('btn-stop');
+            if(UI.analysisBar) UI.analysisBar.style.width = '0%';
+            if(UI.analysisPercent) UI.analysisPercent.innerText = '0%';
+            if(UI.bufferedProgress) UI.bufferedProgress.style.width = '0%';
+            if(UI.playProgress) UI.playProgress.style.width = '0%';
+            if(UI.seekThumb) UI.seekThumb.style.left = '0%';
+            if(UI.vSeek) UI.vSeek.value = 0;
+            if(UI.vTime) UI.vTime.innerText = '00:00';
+            
+            // Clear Canvases
+            [UI.previewCanvas, UI.depthViewCanvas, UI.depthMiniCanvas].forEach(canvas => {
+                if (canvas) {
+                    const ctx = canvas.getContext('2d');
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                }
+            });
+            
+            updateUIState(false);
+            if (file.type.startsWith('video/')) setupVideo(file); else setupImage(file);
+        };
+        
+        UI.modelDtype.addEventListener('change', () => {
+            initAI(true);
+        });
+
+        function setupImage(file) {
+            isVideo = false;
+            if(UI.vBar) UI.vBar.classList.add('hidden');
+            if(UI.batchBtn) UI.batchBtn.classList.add('hidden');
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = new Image();
+                img.onload = () => {
+                    originalImage = img;
+                    UI.depthInputImg.src = event.target.result;
+                    UI.depthInputImg.classList.remove('hidden');
+                    UI.depthVideoPreview.classList.add('hidden');
+                    if(UI.infoType) UI.infoType.innerText = `${img.width}x${img.height} px`;
+                    render(true); 
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function setupVideo(file) {
+            isVideo = true;
+            if(UI.vBar) UI.vBar.classList.remove('hidden');
+            if(UI.batchBtn) UI.batchBtn.classList.remove('hidden');
+            const url = URL.createObjectURL(file);
+            UI.sourceVideo.src = url;
+            UI.analysisVideo.src = url; 
+            
+            if (UI.vPlay) UI.vPlay.innerHTML = '<i class="fas fa-play"></i>';
+            if (UI.vMute) UI.vMute.innerHTML = UI.sourceVideo.muted ? '<i class="fas fa-volume-mute"></i>' : '<i class="fas fa-volume-up"></i>';
+            
+            UI.sourceVideo.onloadedmetadata = () => {
+                if(UI.infoType) UI.infoType.innerText = `${UI.sourceVideo.videoWidth}x${UI.sourceVideo.videoHeight} px`;
+                if(UI.depthVideoPreview) UI.depthVideoPreview.classList.remove('hidden');
+                if(UI.depthInputImg) UI.depthInputImg.classList.add('hidden');
+                if(UI.vSeek) UI.vSeek.max = UI.sourceVideo.duration;
+                
+                // Fallback estimate to prevent 0-frame bug if clicked immediately
+                detectedFPS = 30;
+                totalFrames = Math.ceil(UI.sourceVideo.duration * 30);
+                
+                detectFPS(UI.sourceVideo).then(fps => {
+                    detectedFPS = fps;
+                    totalFrames = Math.ceil(UI.sourceVideo.duration * fps);
+                    const fpsInfo = document.getElementById('info-fps-target');
+                    if (fpsInfo) fpsInfo.innerText = `${fps} FPS`;
+                });
+                render(true);
+            };
+        }
+        
+        async function detectFPS(video) {
+             return new Promise(resolve => {
+                 // Safety timeout: If browser suspends hidden video, fallback to 30fps after 1.5 seconds
+                 const fallbackTimeout = setTimeout(() => {
+                     resolve(30);
+                 }, 1500);
+
+                 if (!video.requestVideoFrameCallback) { 
+                     clearTimeout(fallbackTimeout);
+                     resolve(30); 
+                     return; 
+                 }
+                 
+                 let handle;
+                 let frameCount = 0;
+                 let startTime = 0;
+                 
+                 const callback = (now, metadata) => {
+                     if (startTime === 0) startTime = metadata.mediaTime;
+                     frameCount++;
+                     if (frameCount > 5) {
+                         clearTimeout(fallbackTimeout);
+                         const duration = metadata.mediaTime - startTime;
+                         const fps = Math.round(1 / (duration / (frameCount - 1)));
+                         video.pause();
+                         video.currentTime = 0;
+                         resolve(fps > 0 && fps < 144 ? fps : 30);
+                     } else {
+                         handle = video.requestVideoFrameCallback(callback);
+                     }
+                 };
+                 handle = video.requestVideoFrameCallback(callback);
+                 
+                 // Play video to generate frames. The callback will pause it after 5 frames.
+                 video.play().catch(() => {
+                     clearTimeout(fallbackTimeout);
+                     resolve(30);
+                 });
+             });
+        }
+
+        async function getNeuralProxy(source) {
+            const sw = isVideo ? source.videoWidth : source.width;
+            const sh = isVideo ? source.videoHeight : source.height;
+            const scale = Math.min(1, 320 / sw);
+            UI.snapshotCanvas.width = Math.round(sw * scale);
+            UI.snapshotCanvas.height = Math.round(sh * scale);
+            const ctx = UI.snapshotCanvas.getContext('2d', { willReadFrequently: true });
+            ctx.drawImage(source, 0, 0, UI.snapshotCanvas.width, UI.snapshotCanvas.height);
+            return await RawImage.fromCanvas(UI.snapshotCanvas);
+        }
+
+        // --- Background Caching Engine ---
+        async function toggleBackgroundCaching() {
+            if (isCaching) {
+                // Pause caching
+                isCaching = false;
+                UI.btnAiText.innerText = "Resume Background Analysis";
+                UI.btnAi.classList.remove('btn-stop');
+                return;
+            }
+
+            if (!depthPipeline) return;
+            
+            // Single Image Logic
+            if (!isVideo) {
+                 performSingleAnalysis();
+                 return;
+            }
+
+            // Start Video Caching
+            isCaching = true;
+            UI.btnAiText.innerText = "Pause Analysis";
+            UI.btnAi.classList.add('btn-stop');
+            if(UI.analysisUI) UI.analysisUI.classList.remove('hidden');
+            processBackgroundFrame();
+        }
+        
+        async function performSingleAnalysis() {
+            if (isAIProcessing) return;
+            try {
+                isAIProcessing = true;
+                updateMapProgress(20);
+                const rawImg = await getNeuralProxy(originalImage);
+                updateMapProgress(50);
+                const result = await depthPipeline(rawImg);
+                updateMapProgress(90);
+                currentDepthData = result.depth;
+                renderDepthToViewer(currentDepthData);
+                updateUIState(true);
+                updateMapProgress(100);
+                render();
+            } catch (err) {
+                console.error(err);
+                updateMapProgress(0);
+            } finally {
+                isAIProcessing = false;
+            }
+        }
+
+        async function processBackgroundFrame() {
+            if (!isCaching || !isVideo) return;
+            
+            if (analysisFrameIndex >= totalFrames) {
+                isCaching = false;
+                UI.btnAiText.innerText = "Analysis Complete";
+                UI.btnAi.classList.remove('btn-stop');
+                if(UI.analysisBar) UI.analysisBar.style.width = '100%';
+                return;
+            }
+
+            // Ensure video is ready before seeking
+            if (UI.analysisVideo.readyState < 1) { // HAVE_METADATA
+                 setTimeout(processBackgroundFrame, 100);
+                 return;
+            }
+
+            const BATCH_SIZE = 5;
+            const batchImages = [];
+            const batchIndices = [];
+
+            // 1. Extract up to 5 frames sequentially from the video player
+            for (let i = 0; i < BATCH_SIZE && analysisFrameIndex < totalFrames; i++) {
+                const time = analysisFrameIndex / detectedFPS;
+                
+                // Only seek if needed (small optimization)
+                if (Math.abs(UI.analysisVideo.currentTime - time) > 0.01) {
+                    UI.analysisVideo.currentTime = time;
+                    
+                    // Robust Seek with Timeout
+                    try {
+                        await new Promise((resolve, reject) => {
+                            const timeout = setTimeout(() => {
+                                 UI.analysisVideo.removeEventListener('seeked', onSeek);
+                                 reject("Seek timeout");
+                            }, 2000); // 2 second timeout
+
+                            const onSeek = () => { 
+                                 clearTimeout(timeout);
+                                 UI.analysisVideo.removeEventListener('seeked', onSeek); 
+                                 resolve(); 
+                            };
+                            UI.analysisVideo.addEventListener('seeked', onSeek);
+                        });
+                    } catch(e) {
+                         console.warn("Frame seek timeout, skipping index:", analysisFrameIndex);
+                         analysisFrameIndex++;
+                         continue; // Skip this frame and grab the next one
+                    }
+                }
+
+                const raw = await getNeuralProxy(UI.analysisVideo);
+                batchImages.push(raw);
+                batchIndices.push(analysisFrameIndex);
+                analysisFrameIndex++;
+            }
+
+            if (batchImages.length === 0) {
+                setTimeout(processBackgroundFrame, 0);
+                return;
+            }
+
+            try {
+                // Lock AI processing so UI interaction doesn't overlap
+                isAIProcessing = true;
+                
+                // 2. Fire frames sequentially to the GPU to avoid Session Lock/Concurrency Errors
+                // The Transformers.js ONNX backend does not allow multiple simultaneous .call() invocations
+                const results = [];
+                for (let i = 0; i < batchImages.length; i++) {
+                    results.push(await depthPipeline(batchImages[i]));
+                }
+                
+                // 3. Store results in RAM Cache
+                for (let i = 0; i < results.length; i++) {
+                    const res = results[i];
+                    const idx = batchIndices[i];
+                    frameCache.set(idx, res.depth);
+                    
+                    // Update mini preview for the first frame of the batch to save UI resources
+                    if (i === 0 && idx % 15 === 0) {
+                        renderDepthToViewer(res.depth);
+                    }
+                }
+                
+                // Update Progress UI
+                const pct = Math.round((analysisFrameIndex / totalFrames) * 100);
+                if(UI.analysisBar) UI.analysisBar.style.width = `${pct}%`;
+                if(UI.analysisPercent) UI.analysisPercent.innerText = `${pct}%`;
+                
+                // Also update seekbar buffer visualization
+                if(UI.bufferedProgress) UI.bufferedProgress.style.width = `${pct}%`;
+                
+                isAIProcessing = false;
+                // Yield to main thread briefly to keep UI responsive
+                setTimeout(processBackgroundFrame, 0); 
+            } catch (err) {
+                console.warn("Batch inference skip/error", err);
+                isAIProcessing = false;
+                // If the batch crashes, move on
+                setTimeout(processBackgroundFrame, 0);
+            }
+        }
+
+        function updateMapProgress(val) {
+            if(UI.mapProgressBar) UI.mapProgressBar.style.width = `${val}%`;
+            if(UI.mapPercent) UI.mapPercent.innerText = val >= 100 ? 'Ready' : `${val}%`;
+            if (val >= 100) setTimeout(() => { 
+                if(UI.mapProgressBar) UI.mapProgressBar.style.width = '0%'; 
+                if(UI.mapPercent) UI.mapPercent.innerText = 'Sync'; 
+            }, 1500);
+        }
+
+        function renderDepthToViewer(depthImg) {
+            if (!depthImg) return;
+            [UI.depthViewCanvas, UI.depthMiniCanvas].forEach(canvas => {
+                if(!canvas) return;
+                const ctx = canvas.getContext('2d');
+                canvas.width = depthImg.width; canvas.height = depthImg.height;
+                const idata = ctx.createImageData(canvas.width, canvas.height);
+                for (let i = 0; i < depthImg.data.length; ++i) {
+                    const val = depthImg.data[i];
+                    idata.data[i*4] = idata.data[i*4+1] = idata.data[i*4+2] = val;
+                    idata.data[i*4+3] = 255;
+                }
+                ctx.putImageData(idata, 0, 0);
+            });
+            if(UI.depthViewCanvas) UI.depthViewCanvas.classList.remove('hidden');
+            const downloadBtn = document.getElementById('download-depth-only');
+            if (downloadBtn) downloadBtn.classList.remove('hidden');
+        }
+
+        // --- Render Engine (Symmetrical) ---
+        async function render(forceResUpdate = false) {
+            if (isRendering) return;
+            
+            const source = isVideo ? UI.sourceVideo : originalImage;
+            if (!source) return;
+            if (isVideo && source.readyState < 2) return;
+            
+            isRendering = true;
+            try {
+                const sw = isVideo ? source.videoWidth : source.width;
+                const sh = isVideo ? source.videoHeight : source.height;
+                if (sw === 0) return;
+
+                const previewScale = isBatchProcessing ? 1 : Math.min(1, 640 / sh);
+                const w = Math.round(sw * previewScale);
+                const h = Math.round(sh * previewScale);
+
+                // Determine current depth
+                let depthMap = null;
+                let usingCached = false;
+                
+                if (isVideo) {
+                     const currentFrameIdx = Math.floor(UI.sourceVideo.currentTime * detectedFPS);
+                     if (frameCache.has(currentFrameIdx)) {
+                         depthMap = frameCache.get(currentFrameIdx);
+                         usingCached = true;
+                     }
+                     
+                     // Update UI Status
+                     if (usingCached) {
+                         if(UI.infoEngineText) {
+                             UI.infoEngineText.innerText = "Cached (Smooth)";
+                             UI.infoEngineText.className = "text-sm text-emerald-400 font-bold";
+                         }
+                         if(UI.aiBadge) UI.aiBadge.classList.remove('hidden');
+                         if(UI.aiBadgeText) UI.aiBadgeText.innerText = "Depth Applied";
+                     } else {
+                         if(UI.infoEngineText) {
+                             UI.infoEngineText.innerText = isCaching ? "Analysis Behind..." : "Parallel Shift";
+                             UI.infoEngineText.className = "text-sm italic text-slate-500";
+                         }
+                         if(!isCaching && UI.aiBadge) UI.aiBadge.classList.add('hidden');
+                     }
+                } else {
+                     depthMap = currentDepthData;
+                }
+
+                const method = document.getElementById('sbs-method').value;
+                const strengthVal = parseInt(document.getElementById('sbs-strength').value);
+
+                // Create Buffers for Symmetrical rendering
+                const lCanvas = document.createElement('canvas'); lCanvas.width = w; lCanvas.height = h;
+                const lCtx = lCanvas.getContext('2d', { willReadFrequently: true });
+                
+                const rCanvas = document.createElement('canvas'); rCanvas.width = w; rCanvas.height = h;
+                const rCtx = rCanvas.getContext('2d', { willReadFrequently: true });
+
+                if (!depthMap) {
+                    // Fallback: Parallel Shift (Symmetrical)
+                    const halfShift = (strengthVal * previewScale) / 2;
+                    lCtx.drawImage(source, halfShift, 0, w, h); // Move Right (positive X)
+                    rCtx.drawImage(source, -halfShift, 0, w, h); // Move Left (negative X)
+                } else {
+                    // DIBR Logic (Symmetrical)
+                    // Get Source Data
+                    const tempCanvas = document.createElement('canvas'); tempCanvas.width = w; tempCanvas.height = h;
+                    const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+                    tempCtx.drawImage(source, 0, 0, w, h);
+                    const srcData = tempCtx.getImageData(0,0,w,h);
+                    
+                    const lOutData = lCtx.createImageData(w,h);
+                    const rOutData = rCtx.createImageData(w,h);
+                    
+                    // --- Temporal Smoothing Logic ---
+                    const rawDepth = depthMap.data;
+                    if (!smoothedDepthBuffer || smoothedDepthBuffer.length !== rawDepth.length) {
+                        smoothedDepthBuffer = new Float32Array(rawDepth);
+                    }
+                    const smoothing = parseFloat(document.getElementById('sbs-smoothing').value);
+                    
+                    if (smoothing > 0) {
+                         for(let i=0; i < rawDepth.length; i++) {
+                             smoothedDepthBuffer[i] = (smoothedDepthBuffer[i] * smoothing) + (rawDepth[i] * (1.0 - smoothing));
+                         }
+                    } else {
+                         smoothedDepthBuffer.set(rawDepth);
+                    }
+
+                    const dw = depthMap.width;
+                    const dh = depthMap.height;
+                    const yRatio = dh / h;
+                    const xRatio = dw / w;
+                    
+                    const src32 = new Uint32Array(srcData.data.buffer);
+                    const lOut32 = new Uint32Array(lOutData.data.buffer);
+                    const rOut32 = new Uint32Array(rOutData.data.buffer);
+                    
+                    // Gap fill
+                    lOut32.set(src32); 
+                    rOut32.set(src32);
+
+                    const scaleFactor = strengthVal * previewScale * 0.00392; 
+                    const halfScale = scaleFactor / 2;
+
+                    for (let y = 0; y < h; y++) {
+                        const dyOffset = Math.floor(y * yRatio) * dw;
+                        const rowOffset = y * w;
+                        for (let x = 0; x < w; x++) {
+                            const dx = (x * xRatio) | 0;
+                            const dVal = smoothedDepthBuffer[dyOffset + dx];
+                            
+                            const shift = (dVal * halfScale) | 0; 
+                            
+                            let sxL = x - shift;
+                            if (sxL >= 0 && sxL < w) lOut32[rowOffset + x] = src32[rowOffset + sxL];
+                            
+                            let sxR = x + shift;
+                            if (sxR >= 0 && sxR < w) rOut32[rowOffset + x] = src32[rowOffset + sxR];
+                        }
+                    }
+                    lCtx.putImageData(lOutData, 0, 0);
+                    rCtx.putImageData(rOutData, 0, 0);
+                }
+
+                // Compositing
+                const ctx = UI.previewCanvas.getContext('2d', { alpha: false });
+                if (scalingMode === 'full') {
+                     UI.previewCanvas.width = method==='sbs'||method==='cross' ? w*2 : w;
+                     UI.previewCanvas.height = h;
+                } else {
+                     UI.previewCanvas.width = w; UI.previewCanvas.height = h;
+                }
+
+                if (method === 'sbs' || method === 'cross') {
+                    const drawL = (method === 'sbs') ? lCanvas : rCanvas;
+                    const drawR = (method === 'sbs') ? rCanvas : lCanvas;
+                    if (scalingMode === 'full') {
+                        ctx.drawImage(drawL, 0, 0); ctx.drawImage(drawR, w, 0);
+                    } else {
+                        ctx.drawImage(drawL, 0, 0, w/2, h); ctx.drawImage(drawR, w/2, 0, w/2, h);
+                    }
+                } else if (method === 'wiggle') {
+                    wiggleFrame++;
+                    ctx.drawImage((wiggleFrame % 20 < 10) ? lCanvas : rCanvas, 0, 0);
+                } else if (method === 'anaglyph') {
+                    ctx.drawImage(lCanvas, 0, 0);
+                    ctx.globalCompositeOperation = "multiply"; ctx.fillStyle = "red"; ctx.fillRect(0,0,w,h);
+                    ctx.globalCompositeOperation = "screen";
+                    const temp = document.createElement('canvas'); temp.width = w; temp.height = h;
+                    const tCtx = temp.getContext('2d');
+                    tCtx.drawImage(rCanvas, 0, 0); tCtx.globalCompositeOperation = "multiply"; tCtx.fillStyle = "cyan"; tCtx.fillRect(0,0,w,h);
+                    ctx.drawImage(temp, 0, 0); ctx.globalCompositeOperation = "source-over";
+                }
+                
+                // Sync UI
+                if(UI.infoModeText) UI.infoModeText.innerText = scalingMode === 'full' ? "Full Aspect" : "Squeezed";
+                if(UI.infoRes) UI.infoRes.innerText = `${UI.previewCanvas.width}x${UI.previewCanvas.height}`;
+
+                if (isVideo) {
+                    const s = Math.floor(UI.sourceVideo.currentTime % 60);
+                    const m = Math.floor(UI.sourceVideo.currentTime / 60);
+                    if (UI.vTime) UI.vTime.innerText = `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+                    
+                    // Seekbar Sync
+                    if(document.activeElement !== UI.vSeek && UI.vSeek) {
+                        UI.vSeek.value = UI.sourceVideo.currentTime;
+                        const pct = (UI.sourceVideo.currentTime / UI.sourceVideo.duration) * 100;
+                        if(UI.playProgress) UI.playProgress.style.width = `${pct}%`;
+                        if(UI.seekThumb) UI.seekThumb.style.left = `${pct}%`;
+                    }
+                }
+            } catch(e) {
+                console.error(e);
+            } finally {
+                isRendering = false;
+            }
+        }
+
+        async function startBatchProcess() {
+            alert("Use 'Start Background Analysis' to process the full video, then use 'Save Result' to download the cached version.");
+        }
+
+        window.switchPage = (p) => { 
+            currentPage = p; 
+            document.getElementById('page-sbs').classList.toggle('hidden', p !== 'sbs'); 
+            document.getElementById('page-depth').classList.toggle('hidden', p !== 'depth'); 
+            
+            // Update Nav Button Styles
+            const navSbs = document.getElementById('nav-sbs');
+            const navDepth = document.getElementById('nav-depth');
+            
+            if (p === 'sbs') {
+                navSbs.classList.add('active-tab');
+                navSbs.classList.remove('text-slate-400', 'hover:text-white');
+                navDepth.classList.remove('active-tab');
+                navDepth.classList.add('text-slate-400', 'hover:text-white');
+            } else {
+                navDepth.classList.add('active-tab');
+                navDepth.classList.remove('text-slate-400', 'hover:text-white');
+                navSbs.classList.remove('active-tab');
+                navSbs.classList.add('text-slate-400', 'hover:text-white');
+            }
+            
+            render(); 
+        };
+        
+        UI.vPlay.onclick = () => { 
+            if (UI.sourceVideo.paused) {
+                UI.sourceVideo.play(); 
+                UI.vPlay.innerHTML = '<i class="fas fa-pause"></i>';
+            } else {
+                UI.sourceVideo.pause(); 
+                UI.vPlay.innerHTML = '<i class="fas fa-play"></i>';
+            }
+        };
+
+        if (UI.vMute) {
+            UI.vMute.onclick = () => {
+                UI.sourceVideo.muted = !UI.sourceVideo.muted;
+                UI.vMute.innerHTML = UI.sourceVideo.muted ? '<i class="fas fa-volume-mute"></i>' : '<i class="fas fa-volume-up"></i>';
+            };
+        }
+
+        if (UI.vFullscreen) {
+            UI.vFullscreen.onclick = () => {
+                if (!document.fullscreenElement) {
+                    UI.canvasContainer.requestFullscreen().catch(err => console.error(err));
+                } else {
+                    document.exitFullscreen();
+                }
+            };
+            document.addEventListener('fullscreenchange', () => {
+                UI.vFullscreen.innerHTML = document.fullscreenElement ? '<i class="fas fa-compress"></i>' : '<i class="fas fa-expand"></i>';
+            });
+            
+            let fsTimeout;
+            UI.canvasContainer.onmousemove = () => {
+                if (document.fullscreenElement) {
+                    UI.vBar.style.opacity = '1';
+                    clearTimeout(fsTimeout);
+                    fsTimeout = setTimeout(() => { UI.vBar.style.opacity = '0'; }, 2500);
+                } else {
+                    UI.vBar.style.opacity = '1';
+                }
+            };
+        }
+        
+        UI.vSeek.addEventListener('input', (e) => {
+            const time = parseFloat(e.target.value);
+            UI.sourceVideo.currentTime = time;
+            render();
+        });
+
+        safelyWire('process-sbs-btn', 'click', toggleBackgroundCaching);
+        safelyWire('process-depth-only', 'click', performSingleAnalysis);
+        safelyWire('batch-export-btn', 'click', startBatchProcess);
+        
+        document.getElementById('sbs-strength').oninput = (e) => { document.getElementById('val-strength').innerText = e.target.value + "px"; render(); };
+        document.getElementById('sbs-smoothing').oninput = (e) => { document.getElementById('val-smoothing').innerText = e.target.value; };
+        document.getElementById('sbs-method').onchange = render;
+        
+        if (UI.scaleModeSelect) {
+             UI.scaleModeSelect.onchange = () => { scalingMode = UI.scaleModeSelect.value; render(); }
+        }
+        
+        safelyWire('download-sbs', 'click', () => {
+             const a = document.createElement('a'); a.download = `sbs_render_${Date.now()}.png`; a.href = UI.previewCanvas.toDataURL(); a.click();
+        });
+
+        function updateUIState(active) { if(UI.aiBadge) UI.aiBadge.classList.toggle('hidden', !active); }
+        document.getElementById('toggle-mini-preview').onclick = () => {
+            isUserCollapsed = UI.miniPreviewBody.classList.toggle('collapsed');
+            UI.miniPreviewIcon.style.transform = isUserCollapsed ? 'rotate(180deg)' : 'rotate(0deg)';
+        };
+
+        safelyWire('download-depth-only', 'click', () => {
+            const a = document.createElement('a'); a.download = `depth_map_v5.2_${Date.now()}.png`; a.href = UI.depthViewCanvas.toDataURL(); a.click();
+        });
+
+        function animate() { if (isVideo || document.getElementById('sbs-method').value === 'wiggle') render(); requestAnimationFrame(animate); }
+
+        initAI().then(() => animate());
+    </script>
+</body>
+</html>
